@@ -1,4 +1,5 @@
 // Per-CPU state
+#define SHAREDREGIONS 64
 struct cpu {
   uchar apicid;                // Local APIC ID
   struct context *scheduler;   // swtch() here to enter scheduler
@@ -56,3 +57,10 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+
+typedef struct sharedPages {
+    uint key ,size;
+    int shmid,perm;
+    void *virtualAddr;
+}sharedPages;

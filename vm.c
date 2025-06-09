@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
+#include "shm.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
@@ -392,3 +393,17 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 //PAGEBREAK!
 // Blank page.
 
+
+struct shmRegion{
+  uint key ,size ;
+  int shmid;
+  int toBeDeleted;
+  void * physicalAddr;
+  struct shmid_ds buffer;
+};
+
+struct shmTable {
+  struct shmRegion allRegions[SHAREDREGIONS];
+};
+
+struct shmTable shmTable;
