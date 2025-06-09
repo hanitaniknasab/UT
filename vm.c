@@ -6,7 +6,8 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
-#include "shm.h"
+
+
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
@@ -394,16 +395,101 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 // Blank page.
 
 
-struct shmRegion{
-  uint key ,size ;
-  int shmid;
-  int toBeDeleted;
-  void * physicalAddr;
-  struct shmid_ds buffer;
+
+struct shmRegion {
+    int shmid;          
+    int ref_count;     
+    void *physicalAddr; 
 };
 
+// Shared memory table
 struct shmTable {
-  struct shmRegion allRegions[SHAREDREGIONS];
+    struct shmRegion allRegions[SHAREDREGIONS];
 };
-
 struct shmTable shmTable;
+
+// Initialize shared memory table
+void
+shm_init(void)
+{
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        shmTable.allRegions[i].shmid = 0;
+        shmTable.allRegions[i].ref_count = 0;
+        shmTable.allRegions[i].physicalAddr = 0;
+    }
+}
+
+// System call: open_shared_mem
+void *
+open_shared_mem(int id)
+{
+    if (id < 0) return (void *)-1;
+
+    struct proc *curproc = myproc();
+    void *va = (void *)curproc->sz;
+
+    // بررسی وجود حافظه اشتراکی
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        if (shmTable.allRegions[i].shmid == id && shmTable.allRegions[i].ref_count > 0) {
+            shmTable.allRegions[i].ref_count++;
+            if (mappages(curproc->pgdir, (char *)va, PGSIZE, V2P(shmTable.allRegions[i].physicalAddr), PTE_W | PTE_U) < 0) {
+                shmTable.allRegions[i].ref_count--;
+                return (void *)-1;
+            }
+            curproc->sz += PGSIZE;
+            return va;
+        }
+    }
+
+    // ایجاد منطقه جدید
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        if (shmTable.allRegions[i].shmid == 0) {
+            shmTable.allRegions[i].shmid = id;
+            shmTable.allRegions[i].ref_count = 1;
+            shmTable.allRegions[i].physicalAddr = kalloc();
+            if (shmTable.allRegions[i].physicalAddr == 0) {
+                shmTable.allRegions[i].shmid = 0;
+                shmTable.allRegions[i].ref_count = 0;
+                return (void *)-1;
+            }
+            if (mappages(curproc->pgdir, (char *)va, PGSIZE, V2P(shmTable.allRegions[i].physicalAddr), PTE_W | PTE_U) < 0) {
+                kfree(shmTable.allRegions[i].physicalAddr);
+                shmTable.allRegions[i].shmid = 0;
+                shmTable.allRegions[i].ref_count = 0;
+                return (void *)-1;
+            }
+            curproc->sz += PGSIZE;
+            return va;
+        }
+    }
+
+    return (void *)-1;
+}
+
+// System call: close_shared_mem
+int
+close_shared_mem(int id)
+{
+    if (id < 0) return -1;
+
+    struct proc *curproc = myproc();
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        if (shmTable.allRegions[i].shmid == id && shmTable.allRegions[i].ref_count > 0) {
+            void *va = (void *)(curproc->sz - PGSIZE);
+            pte_t *pte = walkpgdir(curproc->pgdir, (char *)va, 0);
+            if (pte && (*pte & PTE_P)) {
+                *pte = 0; // حذف نگاشت
+            }
+            shmTable.allRegions[i].ref_count--;
+            if (shmTable.allRegions[i].ref_count == 0) {
+                kfree(shmTable.allRegions[i].physicalAddr);
+                shmTable.allRegions[i].shmid = 0;
+                shmTable.allRegions[i].ref_count = 0;
+                shmTable.allRegions[i].physicalAddr = 0;
+            }
+            curproc->sz -= PGSIZE;
+            return 0;
+        }
+    }
+    return -1;
+}

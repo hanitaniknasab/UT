@@ -89,3 +89,25 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+
+
+
+int
+sys_open_shared_mem(void)
+{
+    int id;
+    if (argint(0, &id) < 0)
+        return -1;
+    void *addr = open_shared_mem(id);
+    return (int)addr; 
+}
+
+int
+sys_close_shared_mem(void)
+{
+    int id;
+    if (argint(0, &id) < 0)
+        return -1;
+    return close_shared_mem(id);
+}

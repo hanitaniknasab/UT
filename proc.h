@@ -58,7 +58,7 @@ struct proc {
 //   fixed-size stack
 //   expandable heap
 
-
+#define SHAREDREGIONS 64
 typedef struct sharedPages {
     uint key ,size;
     int shmid,perm;
