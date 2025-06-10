@@ -402,13 +402,11 @@ struct shmRegion {
     void *physicalAddr; 
 };
 
-// Shared memory table
 struct shmTable {
     struct shmRegion allRegions[SHAREDREGIONS];
 };
 struct shmTable shmTable;
 
-// Initialize shared memory table
 void
 shm_init(void)
 {
@@ -419,7 +417,6 @@ shm_init(void)
     }
 }
 
-// System call: open_shared_mem
 void *
 open_shared_mem(int id)
 {
@@ -428,7 +425,7 @@ open_shared_mem(int id)
     struct proc *curproc = myproc();
     void *va = (void *)curproc->sz;
 
-    // بررسی وجود حافظه اشتراکی
+//checking is the shared region is or not
     for (int i = 0; i < SHAREDREGIONS; i++) {
         if (shmTable.allRegions[i].shmid == id && shmTable.allRegions[i].ref_count > 0) {
             shmTable.allRegions[i].ref_count++;
@@ -441,7 +438,6 @@ open_shared_mem(int id)
         }
     }
 
-    // ایجاد منطقه جدید
     for (int i = 0; i < SHAREDREGIONS; i++) {
         if (shmTable.allRegions[i].shmid == 0) {
             shmTable.allRegions[i].shmid = id;
@@ -466,7 +462,6 @@ open_shared_mem(int id)
     return (void *)-1;
 }
 
-// System call: close_shared_mem
 int
 close_shared_mem(int id)
 {
@@ -478,7 +473,7 @@ close_shared_mem(int id)
             void *va = (void *)(curproc->sz - PGSIZE);
             pte_t *pte = walkpgdir(curproc->pgdir, (char *)va, 0);
             if (pte && (*pte & PTE_P)) {
-                *pte = 0; // حذف نگاشت
+                *pte = 0; 
             }
             shmTable.allRegions[i].ref_count--;
             if (shmTable.allRegions[i].ref_count == 0) {
