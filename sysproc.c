@@ -111,3 +111,44 @@ sys_close_shared_mem(void)
         return -1;
     return close_shared_mem(id);
 }
+
+int sys_monitor_init(void) {
+    int shared_mem_id;
+    int *initial_value;
+    int size_value;
+
+    if (argint(0, &shared_mem_id) < 0 ||
+        argint(2, &size_value) < 0 ||
+        argptr(1, (char**)&initial_value, size_value * sizeof(int)) < 0)
+        return -1;
+
+    return monitor_init(shared_mem_id, initial_value, size_value);
+}
+
+
+int sys_monitor_increase_all_elems(void) {
+    int shared_mem_id;
+    if (argint(0, &shared_mem_id) < 0)
+        return -1;
+
+    return monitor_increase_all_elems(shared_mem_id);
+}
+
+int sys_monitor_close_shared_mem(void) {
+    int shared_mem_id;
+    if (argint(0, &shared_mem_id) < 0)
+        return -1;
+
+    return monitor_close_shared_mem(shared_mem_id);
+}
+
+int sys_monitor_read_shared_mem(void) {
+    int shared_mem_id;
+    int* data;
+
+    if (argint(0, &shared_mem_id) < 0 || argptr(1, (char**)&data, sizeof(int*)) < 0)
+        return -1;
+
+    return monitor_read_shared_mem(shared_mem_id, data);
+}
+

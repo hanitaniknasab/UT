@@ -175,6 +175,7 @@ void            seginit(void);
 void            kvmalloc(void);
 pde_t*          setupkvm(void);
 char*           uva2ka(pde_t*, char*);
+int             copyin(pde_t*, char*, uint, uint);
 int             allocuvm(pde_t*, uint, uint);
 int             deallocuvm(pde_t*, uint, uint);
 void            freevm(pde_t*);
@@ -186,6 +187,7 @@ void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 void            shm_init(void);
+void            lokinit(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
@@ -194,3 +196,7 @@ void            shm_init(void);
 
 void *open_shared_mem(int);
 int close_shared_mem(int);
+int monitor_increase_all_elems(int shared_mem_id);
+int monitor_init(int shared_mem_id, int* initial_value, int size_value);
+int monitor_close_shared_mem(int shared_mem_id);
+int monitor_read_shared_mem(int shared_mem_id, int* data);

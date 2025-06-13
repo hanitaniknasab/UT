@@ -36,6 +36,7 @@ main(void)
   userinit();      // first user process
   mpmain();        // finish this processor's setup
   shm_init();
+  lokinit();
 }
 
 // Other CPUs jump here from entryother.S.

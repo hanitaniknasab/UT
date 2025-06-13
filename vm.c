@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
+#include "spinlock.h"
 
 
 
@@ -400,12 +401,22 @@ struct shmRegion {
     int shmid;          
     int ref_count;     
     void *physicalAddr; 
+    int *arrayView;
+    int size_of_array;
 };
 
 struct shmTable {
     struct shmRegion allRegions[SHAREDREGIONS];
 };
 struct shmTable shmTable;
+
+struct monitor {
+    struct shmTable table;
+    struct spinlock lock; 
+};                                 
+
+
+struct monitor shmMonitor;
 
 void
 shm_init(void)
@@ -414,6 +425,8 @@ shm_init(void)
         shmTable.allRegions[i].shmid = 0;
         shmTable.allRegions[i].ref_count = 0;
         shmTable.allRegions[i].physicalAddr = 0;
+        shmTable.allRegions[i].arrayView = 0;
+        shmTable.allRegions[i].size_of_array = 0;
     }
 }
 
@@ -446,12 +459,16 @@ open_shared_mem(int id)
             if (shmTable.allRegions[i].physicalAddr == 0) {
                 shmTable.allRegions[i].shmid = 0;
                 shmTable.allRegions[i].ref_count = 0;
+                shmTable.allRegions[i].arrayView = 0;
+                shmTable.allRegions[i].size_of_array = 0;
                 return (void *)-1;
             }
             if (mappages(curproc->pgdir, (char *)va, PGSIZE, V2P(shmTable.allRegions[i].physicalAddr), PTE_W | PTE_U) < 0) {
                 kfree(shmTable.allRegions[i].physicalAddr);
                 shmTable.allRegions[i].shmid = 0;
                 shmTable.allRegions[i].ref_count = 0;
+                shmTable.allRegions[i].arrayView = 0;
+                shmTable.allRegions[i].size_of_array = 0;
                 return (void *)-1;
             }
             curproc->sz += PGSIZE;
@@ -481,10 +498,174 @@ close_shared_mem(int id)
                 shmTable.allRegions[i].shmid = 0;
                 shmTable.allRegions[i].ref_count = 0;
                 shmTable.allRegions[i].physicalAddr = 0;
+                shmTable.allRegions[i].arrayView = 0;
+                shmTable.allRegions[i].size_of_array = 0;
             }
             curproc->sz -= PGSIZE;
             return 0;
         }
     }
     return -1;
+}
+
+void
+lokinit(void){
+  initlock(&shmMonitor.lock, "shared_monitor_lock");
+}
+
+
+int
+copyin(pde_t *pgdir, char *dst, uint srcva, uint len)
+{
+    char *p;
+    uint n, va;
+
+    for(n = 0; n < len; n++){
+        va = srcva + n;
+        p = uva2ka(pgdir, (char*)va); 
+        if(p == 0)
+            return -1;
+        dst[n] = *p;
+    }
+    return 0;
+}
+
+
+int
+monitor_init(int shared_mem_id, int* initial_value, int size_value) {
+    if (size_value * sizeof(int) > PGSIZE)
+        return -1;
+
+    acquire(&shmMonitor.lock);
+
+    void* va = open_shared_mem(shared_mem_id);
+    if ((int)va == -1) {
+        cprintf("Shared memory failed to open\n");
+        release(&shmMonitor.lock);
+        return -1;
+    }
+
+    struct shmRegion* region = 0;
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        if (shmTable.allRegions[i].shmid == shared_mem_id) {
+            region = &shmTable.allRegions[i];
+            break;
+        }
+    }
+
+    if (region == 0) {
+        cprintf("fail to find\n");
+        release(&shmMonitor.lock);
+        return -1;
+    }
+
+    region->arrayView = (int*)region->physicalAddr;
+    region->size_of_array = size_value;
+
+    for (int i = 0; i < size_value; i++) {
+        int val;
+        if (copyin(myproc()->pgdir, (char*)&val, (uint)(initial_value + i), sizeof(int)) < 0) {
+            release(&shmMonitor.lock);
+            return -1;
+        }
+      
+        region->arrayView[i] = initial_value[i];
+    }
+
+    cprintf("Shared memory initialized with values:\n");
+    for (int i = 0; i < region->size_of_array; i++) {
+        cprintf(" [%d] = %d\n", i, region->arrayView[i]);
+    }
+
+    release(&shmMonitor.lock);
+    return 0;
+}
+
+
+int
+monitor_increase_all_elems(int shared_mem_id) {
+    acquire(&shmMonitor.lock);
+
+    struct shmRegion* region = 0;
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        if (shmTable.allRegions[i].shmid == shared_mem_id) {
+            region = &shmTable.allRegions[i];
+            break;
+        }
+    }
+
+    if (region == 0 || region->physicalAddr == 0) {
+        release(&shmMonitor.lock);
+        return -1;
+    }
+
+    int* physical_array = (int*)region->physicalAddr;
+    for (int i = 0; i < region->size_of_array; i++) {
+        physical_array[i]++;
+    }
+
+    region->arrayView = physical_array;
+
+    cprintf("Shared memory contents after increment:\n");
+    for (int i = 0; i < region->size_of_array; i++) {
+        cprintf(" [%d] = %d\n", i, physical_array[i]);
+    }
+
+    release(&shmMonitor.lock);
+    return 0;
+}
+
+
+int
+monitor_close_shared_mem(int shared_mem_id) {
+    acquire(&shmMonitor.lock);
+
+    struct shmRegion* region = 0;
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        if (shmTable.allRegions[i].shmid == shared_mem_id) {
+            region = &shmTable.allRegions[i];
+            break;
+        }
+    }
+
+    if (region == 0) {
+        release(&shmMonitor.lock);
+        return -1;
+    }
+
+    int result = close_shared_mem(shared_mem_id);
+
+    release(&shmMonitor.lock);
+    return result;
+}
+
+int
+monitor_read_shared_mem(int shared_mem_id, int* data) {
+    acquire(&shmMonitor.lock);
+
+    struct shmRegion* region = 0;
+    for (int i = 0; i < SHAREDREGIONS; i++) {
+        if (shmTable.allRegions[i].shmid == shared_mem_id) {
+            region = &shmTable.allRegions[i];
+            break;
+        }
+    }
+
+    if (region == 0) {
+        release(&shmMonitor.lock);
+        return -1;
+    }
+
+    int size = region->size_of_array;
+    int* source_array = (int*)region->physicalAddr;
+
+    for (int i = 0; i < size; i++) {
+        if (copyout(myproc()->pgdir, (uint)(data + i), (char*)&source_array[i], sizeof(int)) < 0) {
+            release(&shmMonitor.lock);
+            return -1;
+        }
+    }
+
+    release(&shmMonitor.lock);
+    return 0;
 }

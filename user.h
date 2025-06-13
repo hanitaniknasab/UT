@@ -25,6 +25,13 @@ int sleep(int);
 int uptime(void);
 void *open_shared_mem(int);
 int close_shared_mem(int);
+int monitor_init(int , int* , int);
+int monitor_increase_all_elems(int);
+int monitor_close_shared_mem(int);
+int monitor_read_shared_mem(int, int*);
+
+
+
 
 // ulib.c
 int stat(const char*, struct stat*);
