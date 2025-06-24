@@ -183,6 +183,10 @@ UPROGS=\
 	_zombie\
 	_shmTest\
 	_monitorTest\
+	_shmt\
+	_shmt_b\
+
+
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
